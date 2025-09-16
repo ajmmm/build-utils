@@ -4,7 +4,7 @@
 BASENAME=$(basename "${0}")
 BASEPATH=$(dirname "${0}")
 CURPATH=$(pwd)
-TMPNAME=".tmp.XXXXXX"
+TMPNAME=".tmp"
 
 function fatal() {
 	echo "FATAL ERROR: $@"
@@ -59,7 +59,8 @@ while (( "$#" )); do
 done
 
 function cleanup() {
-        rm -rf ".tmp.*"
+        echo "Cleanup..."
+        rm -rf ${TMPNAME}.*
         popd || exit 1
 }
 
@@ -74,7 +75,7 @@ pushd "${MK_PATH}" || fatal "pushd(${MK_PATH}) failed"
 
 # Defaults
 MK_FILE_SRC="Makefile"
-MK_FILE_TMP=$(mktemp "${TMPNAME}")
+MK_FILE_TMP=$(mktemp "${TMPNAME}.XXXXXX")
 MK_ARCH=$(uname -m)
 MK_NPROCS=$(${NPROC} --all)
 
@@ -82,7 +83,11 @@ MK_NPROCS=$(${NPROC} --all)
 GIT_HASH=$(${GIT} show -s --format=%h)
 GIT_BRANCH=$(${GIT} branch | sed -n '/\* /s///p')
 GIT_DETACHED=$(echo "${GIT_BRANCH}" | grep "detached at" | cut -d "(" -f2 | cut -d ")" -f1 | sed -e 's/[ \/]/_/g')
-[ ! -z "${GIT_DETACHED}" ] && GIT_BRANCH="${GIT_DETACHED}"
+if [ ! -z "${GIT_DETACHED}" ]; then
+        GIT_BRANCH="${GIT_DETACHED}"
+else
+        GIT_BRANCH=${GIT_BRANCH//\//__}
+fi
 
 # Generate new version information
 EXTRA_VERSION=$(grep -E "^EXTRAVERSION" "${MK_FILE_SRC}" | sed -e 's/^EXTRAVERSION = //g')
@@ -94,6 +99,7 @@ sed -i "s@^EXTRAVERSION.*@EXTRAVERSION = ${BUILD_VERSION}@" "${MK_FILE_TMP}"
 
 # Run a build
 NUM_PROCS=$(( "${MK_NPROCS}" + 0 ))
+echo "TMP_MAKEFILE = ${MK_FILE_TMP}"
 echo "EXTRAVERSION = ${BUILD_VERSION}"
 echo "MK_IMAGE=${MK_IMAGE} MK_MODULES=${MK_MODULES} MK_INSTALL=${MK_INSTALL} MK_CLEAN=${MK_CLEAN} NUM_PROCS=${NUM_PROCS}"
 sleep 1
