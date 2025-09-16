@@ -14,12 +14,14 @@ function fatal() {
 NPROC=$(which nproc 2>/dev/null) || fatal "I need nproc!"
 GIT=$(which git 2>/dev/null) || fatal "I need git!"
 MAKE=$(which make 2>/dev/null) || fatal "I need make!"
+GRUBBY=$(which grubby 2>/dev/null) || fatal "I need grubby!"
 
 # Process args
 MK_PREPARE=0
 MK_IMAGE=0
 MK_MODULES=0
 MK_INSTALL=0
+MK_GRUBBY=0
 MK_CLEAN=0
 MK_PATH="${CURPATH}"
 while (( "$#" )); do
@@ -40,6 +42,11 @@ while (( "$#" )); do
                 
                 --install)
                         MK_INSTALL=1
+                        MK_GRUBBY=1
+                        shift ;;
+                
+                --grubby)
+                        MK_GRUBBY=1
                         shift ;;
 
                 --full)
@@ -47,6 +54,7 @@ while (( "$#" )); do
                         MK_IMAGE=1
                         MK_MODULES=1
                         MK_INSTALL=1
+                        MK_GRUBBY=1
                         shift ;;
                 
                 --clean)
@@ -90,17 +98,27 @@ else
         GIT_BRANCH=${GIT_BRANCH//\//__}
 fi
 
-# Generate new version information
+# Generate new version information.
+
 EXTRA_VERSION=$(grep -E "^EXTRAVERSION" "${MK_FILE}" | sed -e 's/^EXTRAVERSION = //g')
 EXTRA_VERSION="${EXTRA_VERSION}.${GIT_HASH}.${GIT_BRANCH}"
 
-# Run a build
-NUM_PROCS=$(( "${MK_NPROCS}" + 0 ))
-MK_COMMAND="${MAKE} EXTRAVERSION=${EXTRA_VERSION} -j${NUM_PROCS}"
-MK_VERSION=$(${MK_COMMAND} -s kernelrelease)
+# Ask the tree for the full release string. The kernel build will fail if a version string
+# is >64 characters in length, so truncate if we need to.
 
-echo "MK_VERSION=${MK_VERSION}"
-echo "MK_IMAGE=${MK_IMAGE} MK_MODULES=${MK_MODULES} MK_INSTALL=${MK_INSTALL} MK_CLEAN=${MK_CLEAN} NUM_PROCS=${NUM_PROCS}"
+MK_VERSION=$(${MAKE} -s EXTRAVERSION=${EXTRA_VERSION} kernelrelease)
+while [ "${#MK_VERSION}" -gt 63 ]; do
+        EXTRA_VERSION="${EXTRA_VERSION::-1}"
+        MK_VERSION=$(${MAKE} -s EXTRAVERSION=${EXTRA_VERSION} kernelrelease)
+done
+
+# Do the build
+MK_COMMAND="${MAKE} EXTRAVERSION=${EXTRA_VERSION} -j${MK_NPROCS}"
+
+echo "MK_VERSION=${MK_VERSION} MK_NPROCS=${MK_NPROCS}"
+echo "MK_COMMAND=${MK_COMMAND}"
+echo "MK_IMAGE=${MK_IMAGE} MK_MODULES=${MK_MODULES} MK_INSTALL=${MK_INSTALL} MK_CLEAN=${MK_CLEAN}"
+
 sleep 1
 
 if [ "${MK_PREPARE}" -gt 0 ]; then
@@ -114,8 +132,12 @@ if [ "${MK_MODULES}" -gt 0 ]; then
         ${MK_COMMAND} modules || fatal "make modules failed"
 fi
 if [ "${MK_INSTALL}" -gt 0 ]; then
-        ${MK_COMMAND} modules_install || fatal "make modules_install failed"
-        ${MK_COMMAND} install || fatal "make install failed"
+        sudo -E ${MK_COMMAND} modules_install || fatal "make modules_install failed"
+        sudo -E ${MK_COMMAND} install || fatal "make install failed"
+        sudo -E cp -f ".config" "/boot/config-${MK_VERSION}"
+fi
+if [ "${MK_GRUBBY}" -gt 0 ]; then
+        sudo -E ${GRUBBY} --set-default "/boot/vmlinuz-${MK_VERSION}" || fatal "grubby set-default failed"
 fi
 if [ "${MK_CLEAN}" -gt 0 ]; then
         ${MK_COMMAND} clean || fatal "make clean failed"
