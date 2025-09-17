@@ -17,6 +17,7 @@ MAKE=$(which make 2>/dev/null) || fatal "I need make!"
 GRUBBY=$(which grubby 2>/dev/null) || fatal "I need grubby!"
 
 # Process args
+MK_HASH=0
 MK_PREPARE=0
 MK_IMAGE=0
 MK_MODULES=0
@@ -28,6 +29,10 @@ while (( "$#" )); do
 	ARG1=$(echo "${1}" | awk '{$1=$1;print}')
 	ARG2=$(echo "${2}" | awk '{$1=$1;print}')
 	case "${ARG1}" in
+                --hash)
+                        MK_HASH=1
+                        shift ;;
+
                 --prepare)
                         MK_PREPARE=1
                         shift ;;
@@ -101,7 +106,11 @@ fi
 # Generate new version information.
 
 EXTRA_VERSION=$(grep -E "^EXTRAVERSION" "${MK_FILE}" | sed -e 's/^EXTRAVERSION = //g')
-EXTRA_VERSION="${EXTRA_VERSION}.${GIT_HASH}.${GIT_BRANCH}"
+if [ "${MK_HASH}" -gt 0 ]; then
+        EXTRA_VERSION="${EXTRA_VERSION}.${GIT_HASH}.${GIT_BRANCH}"
+else
+        EXTRA_VERSION="${EXTRA_VERSION}.${GIT_BRANCH}"
+fi
 
 # Ask the tree for the full release string. The kernel build will fail if a version string
 # is >64 characters in length, so truncate if we need to.
@@ -115,9 +124,9 @@ done
 # Do the build
 MK_COMMAND="${MAKE} EXTRAVERSION=${EXTRA_VERSION} -j${MK_NPROCS}"
 
+echo "MK_HASH=${MK_HASH} MK_IMAGE=${MK_IMAGE} MK_MODULES=${MK_MODULES} MK_INSTALL=${MK_INSTALL} MK_CLEAN=${MK_CLEAN}"
 echo "MK_VERSION=${MK_VERSION} MK_NPROCS=${MK_NPROCS}"
 echo "MK_COMMAND=${MK_COMMAND}"
-echo "MK_IMAGE=${MK_IMAGE} MK_MODULES=${MK_MODULES} MK_INSTALL=${MK_INSTALL} MK_CLEAN=${MK_CLEAN}"
 
 sleep 1
 
